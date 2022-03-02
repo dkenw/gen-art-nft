@@ -5,10 +5,11 @@ import "@rari-capital/solmate/src/tokens/ERC721.sol";
 import "./NFTDescriptor.sol";
 
 contract GenArtNFT is ERC721 {
-    address public owner;
     bool public mintable;
-    uint16 public dimensionLimits = 0x8166;
+    uint16 public dimensionLimits = 0x6166;
     uint24 public totalSupply;
+    address public tokenDescriptor;
+    address public owner;
     uint128[65535] public tokenData;
 
     uint256 internal constant MAX_SUPPLY = 3000;
@@ -37,6 +38,11 @@ contract GenArtNFT is ERC721 {
 
     function setDimensionLimit(uint16 _dimensionLimits) external onlyOwner {
         dimensionLimits = _dimensionLimits;
+    }
+
+    // only in case we need to patch the art logic
+    function setTokenDescriptor(address _descriptor) external onlyOwner {
+        tokenDescriptor = _descriptor;
     }
 
     function mint(uint128 data) external {
@@ -69,6 +75,7 @@ contract GenArtNFT is ERC721 {
         )
     {
         uint256 data = tokenData[tokenId];
+        require(data != 0, "Token not exists");
         ncol = data & 0x7;
         nrow = (data & 0x38) >> 3;
         result = uint120(data) >> 6;
@@ -76,6 +83,9 @@ contract GenArtNFT is ERC721 {
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if (tokenDescriptor != address(0)) {
+            return IERC721Descriptor(tokenDescriptor).tokenURI(tokenId);
+        }
         (uint256 ncol, uint256 nrow, uint256 result, uint256 salt) = _getData(tokenId);
         return NFTDescriptor.constructTokenURI(tokenId, result, ncol, nrow, salt, name);
     }
@@ -84,4 +94,13 @@ contract GenArtNFT is ERC721 {
         (uint256 ncol, uint256 nrow, uint256 result, uint256 salt) = _getData(tokenId);
         return NFTDescriptor.makeImageURI(result, ncol, nrow, salt);
     }
+
+    function squares(uint256 tokenId) external view returns (string memory) {
+        (uint256 ncol, uint256 nrow, uint256 result, ) = _getData(tokenId);
+        return NFTDescriptor.makeSquares(result, ncol, nrow);
+    }
+}
+
+interface IERC721Descriptor {
+    function tokenURI(uint256 tokenId) external view returns (string memory);
 }
