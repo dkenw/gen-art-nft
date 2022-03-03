@@ -4,15 +4,29 @@ pragma solidity ^0.8.10;
 library NFTArt {
     using RNG for RNG.Data;
 
-    int256 internal constant LOGO_SCALE = 35;
-    int256 internal constant LOGO_LENGTH = 112 * LOGO_SCALE;
+    uint256 internal constant W_BASE = 30;
+    uint256 internal constant W_RAND = 30;
+    uint256 internal constant L_BASE = 30;
+    uint256 internal constant L_RAND = 30;
+    uint256 internal constant H_BASE = 20;
+    uint256 internal constant H_RAND = 40;
+    uint256 internal constant LAST_ROW_MIN_L = 55;
+    uint256 internal constant FIRST_COL_MIN_W = 25;
+
+    bytes internal constant BG_COLOR = "FBF5E9FBF5E9FBECE9F7F2E6ECEBE8EAEAEAF5EEE6";
+    bytes6 internal constant FRAME_COLOR = "332E22";
+    bytes6 internal constant COLOR1 = "E8E4DC";
+    bytes internal constant COLOR2 = "6688EE6688EEFCBC18FDBD2EFE514EF2532DE7AC52EC6B2558C9EDEC6B25457DB6FCD265999999C3B89FF4AB13208793";
+    bytes internal constant COLOR3 = "EE6666EE666628A7914561CC6CC2820B9594639AA0639AA0EF8FA3623A53DC5357DC505355555550978E9FBBC1C92B28";
+
+    int256 internal constant LOGO_LENGTH = 112 * 35; // logo_scale = 35
     int256 internal constant SCALE = 100;
     int256 internal constant OFFSET_X = (600 / 2) * SCALE;
     int256 internal constant OFFSET_Y = ((600 / 2) + 20) * SCALE;
     int256 internal constant COS_30 = 86602540;
     int256 internal constant SIN_30 = 50000000;
 
-    function iso(int256 p, int256 q) internal pure returns (int256 x, int256 y) {
+    function isometric(int256 p, int256 q) internal pure returns (int256 x, int256 y) {
         unchecked {
             x = ((p + q) * COS_30) / 1e8 + OFFSET_X;
             y = ((q - p) * SIN_30) / 1e8 + OFFSET_Y;
@@ -32,6 +46,15 @@ library NFTArt {
                             ((((uint256(value) / 1e4) % 10)) << 32)
                     )
             );
+        }
+    }
+
+    function pickColor(bytes memory choices, uint256 rand) internal pure returns (bytes6 picked) {
+        unchecked {
+            uint256 i = (rand % (choices.length / 6)) * 6;
+            assembly {
+                picked := mload(add(add(choices, 32), i))
+            }
         }
     }
 
@@ -57,10 +80,10 @@ library NFTArt {
     ) internal pure returns (bytes memory blk) {
         unchecked {
             Plane memory ground;
-            (ground.ax, ground.ay) = iso(p, q);
-            (ground.bx, ground.by) = iso(p + w, q);
-            (ground.cx, ground.cy) = iso(p + w, q + l);
-            (ground.dx, ground.dy) = iso(p, q + l);
+            (ground.ax, ground.ay) = isometric(p, q);
+            (ground.bx, ground.by) = isometric(p + w, q);
+            (ground.cx, ground.cy) = isometric(p + w, q + l);
+            (ground.dx, ground.dy) = isometric(p, q + l);
 
             Plane memory cover = Plane({
                 ax: ground.ax,
@@ -74,28 +97,26 @@ library NFTArt {
             });
 
             // prettier-ignore
-            {
-                bytes memory coverCode = abi.encodePacked(
-                    '<path d="M', intToString(cover.ax), ",", intToString(cover.ay),
-                    "L", intToString(cover.bx), ",", intToString(cover.by),
-                    "L", intToString(cover.cx), ",", intToString(cover.cy),
-                    "L", intToString(cover.dx), ",", intToString(cover.dy), 'Z" fill="#', color, '"/>'
-                );
-                bytes memory sides = abi.encodePacked(
-                    '<path d="M', intToString(cover.ax), ",", intToString(cover.ay),
-                    "L", intToString(cover.dx), ",", intToString(cover.dy),
-                    "L", intToString(cover.cx), ",", intToString(cover.cy),
-                    "V", intToString(ground.cy),
-                    "L", intToString(ground.dx), ",", intToString(ground.dy),
-                    "L", intToString(ground.ax), ",", intToString(ground.ay), 'Z"/>'
-                );
-                blk = abi.encodePacked(sides, coverCode);
-            }
+            bytes memory coverCode = abi.encodePacked(
+                '<path d="M', intToString(cover.ax), ",", intToString(cover.ay),
+                "L", intToString(cover.bx), ",", intToString(cover.by),
+                "L", intToString(cover.cx), ",", intToString(cover.cy),
+                "L", intToString(cover.dx), ",", intToString(cover.dy), 'Z" fill="#', color, '"/>'
+            );
+            // prettier-ignore
+            bytes memory sides = abi.encodePacked(
+                '<path d="M', intToString(cover.ax), ",", intToString(cover.ay),
+                "L", intToString(cover.dx), ",", intToString(cover.dy),
+                "L", intToString(cover.cx), ",", intToString(cover.cy),
+                "V", intToString(ground.cy),
+                "L", intToString(ground.dx), ",", intToString(ground.dy),
+                "L", intToString(ground.ax), ",", intToString(ground.ay), 'Z"/>'
+            );
+            blk = abi.encodePacked(sides, coverCode);
 
             if (addLogo) {
-                (int256 logoX, int256 logoY) = iso(p + w / 2, q + (l - LOGO_LENGTH) / 2);
-                logoY -= h;
-                blk = abi.encodePacked(blk, '<use href="#logo" x="', intToString(logoX), '" y="', intToString(logoY), '"/>');
+                (int256 x, int256 y) = isometric(p + w / 2, q + (l - LOGO_LENGTH) / 2);
+                blk = abi.encodePacked(blk, '<use href="#logo" x="', intToString(x), '" y="', intToString(y - h), '"/>');
             }
         }
     }
@@ -145,21 +166,6 @@ library NFTArt {
 
     // ------- config -------
 
-    uint256 internal constant W_BASE = 30;
-    uint256 internal constant W_RAND = 30;
-    uint256 internal constant L_BASE = 30;
-    uint256 internal constant L_RAND = 30;
-    uint256 internal constant H_BASE = 20;
-    uint256 internal constant H_RAND = 40;
-    uint256 internal constant LAST_ROW_MIN_L = 55;
-    uint256 internal constant FIRST_COL_MIN_W = 25;
-
-    bytes internal constant BG_COLOR = "FBF5E9FBF5E9FBECE9F7F2E6ECEBE8EAEAEAF5EEE6";
-    bytes6 internal constant FRAME_COLOR = "332E22";
-    bytes6 internal constant COLOR1 = "E8E4DC";
-    bytes internal constant COLOR2 = "6688EE6688EEFCBC18FDBD2EFE514EF2532DE7AC52EC6B2558C9EDEC6B25457DB6FCD265999999C3B89FF4AB13208793";
-    bytes internal constant COLOR3 = "EE6666EE666628A7914561CC6CC2820B9594639AA0639AA0EF8FA3623A53DC5357DC505355555550978E9FBBC1C92B28";
-
     struct Config {
         uint256 result;
         uint256 ncol;
@@ -181,12 +187,17 @@ library NFTArt {
         uint256 nrow,
         uint256 salt
     ) internal pure returns (Config memory cfg) {
-        RNG.Data memory rng = RNG.Data(keccak256(abi.encode(salt)), 0);
+        RNG.Data memory rng = RNG.Data(salt, 0);
 
         cfg.result = result;
         cfg.ncol = ncol;
         cfg.nrow = nrow;
-        (cfg.colors, cfg.bgColor, cfg.frameColor) = getColors(rng.rand());
+
+        cfg.colors[0] = COLOR1;
+        cfg.colors[1] = pickColor(COLOR2, rng.rand());
+        cfg.colors[2] = pickColor(COLOR3, rng.rand());
+        cfg.bgColor = pickColor(BG_COLOR, rng.rand());
+        cfg.frameColor = FRAME_COLOR;
 
         while (true) {
             unchecked {
@@ -213,7 +224,7 @@ library NFTArt {
                 cfg.offsetQ = -int256(memo) / 2;
             }
             // ensure no "out of canvas"
-            (int256 x0, ) = iso(cfg.offsetP, cfg.offsetQ);
+            (int256 x0, ) = isometric(cfg.offsetP, cfg.offsetQ);
             if (x0 >= 3000) break;
         }
         unchecked {
@@ -225,31 +236,6 @@ library NFTArt {
                 }
             }
         }
-    }
-
-    function pickColor(bytes memory choices, uint256 rand) internal pure returns (bytes6 picked) {
-        unchecked {
-            uint256 i = (rand % (choices.length / 6)) * 6;
-            assembly {
-                picked := mload(add(add(choices, 32), i))
-            }
-        }
-    }
-
-    function getColors(uint256 rand)
-        internal
-        pure
-        returns (
-            bytes6[3] memory colors,
-            bytes6 bgColor,
-            bytes6 frameColor
-        )
-    {
-        colors[0] = COLOR1;
-        colors[1] = pickColor(COLOR2, rand);
-        colors[2] = pickColor(COLOR3, rand >> 128);
-        bgColor = pickColor(BG_COLOR, rand);
-        frameColor = FRAME_COLOR;
     }
 
     // ------- entry point -------
@@ -266,7 +252,7 @@ library NFTArt {
 
 library RNG {
     struct Data {
-        bytes32 seed;
+        uint256 seed;
         uint256 i;
     }
 
