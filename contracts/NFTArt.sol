@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 pragma solidity ^0.8.10;
 
+import "./RNG.sol";
+
 library NFTArt {
     using RNG for RNG.Data;
 
@@ -13,18 +15,26 @@ library NFTArt {
     uint256 internal constant LAST_ROW_MIN_L = 55;
     uint256 internal constant FIRST_COL_MIN_W = 25;
 
-    bytes internal constant BG_COLOR = "FBF5E9FBF5E9FBECE9F7F2E6ECEBE8EAEAEAF5EEE6";
     bytes6 internal constant FRAME_COLOR = "332E22";
     bytes6 internal constant COLOR1 = "E8E4DC";
     bytes internal constant COLOR2 = "6688EE6688EEFCBC18FDBD2EFE514EF2532DE7AC52EC6B2558C9EDEC6B25457DB6FCD265999999C3B89FF4AB13208793";
     bytes internal constant COLOR3 = "EE6666EE666628A7914561CC6CC2820B9594639AA0639AA0EF8FA3623A53DC5357DC505355555550978E9FBBC1C92B28";
+    bytes internal constant BG_COLOR = "FBF5E9FBF5E9FBECE9F7F2E6ECEBE8EAEAEAF5EEE6";
 
-    int256 internal constant LOGO_LENGTH = 112 * 35; // logo_scale = 35
+    int256 internal constant LOGO_LENGTH = 112 * 35; // logo scale: 35
     int256 internal constant SCALE = 100;
-    int256 internal constant OFFSET_X = (600 / 2) * SCALE;
+    int256 internal constant OFFSET_X = ((600 / 2) + 0) * SCALE;
     int256 internal constant OFFSET_Y = ((600 / 2) + 20) * SCALE;
     int256 internal constant COS_30 = 86602540;
     int256 internal constant SIN_30 = 50000000;
+
+    /**
+     * w:       block width
+     * l:       block length
+     * h:       block height
+     * (p, q):  block position in virtual plane
+     * (x, y):  block position in projected plane
+     */
 
     function isometric(int256 p, int256 q) internal pure returns (int256 x, int256 y) {
         unchecked {
@@ -36,16 +46,14 @@ library NFTArt {
     function intToString(int256 value) internal pure returns (bytes5 buffer) {
         assert(value >= 0 && value <= 99999);
         unchecked {
-            buffer = bytes5(
-                0x3030303030 +
-                    uint40(
-                        ((((uint256(value) / 1e0) % 10)) << 0) |
-                            ((((uint256(value) / 1e1) % 10)) << 8) |
-                            ((((uint256(value) / 1e2) % 10)) << 16) |
-                            ((((uint256(value) / 1e3) % 10)) << 24) |
-                            ((((uint256(value) / 1e4) % 10)) << 32)
-                    )
-            );
+            // prettier-ignore
+            buffer = bytes5(0x3030303030 + uint40(
+                ((((uint256(value) / 1e0) % 10)) << 0) |
+                ((((uint256(value) / 1e1) % 10)) << 8) |
+                ((((uint256(value) / 1e2) % 10)) << 16) |
+                ((((uint256(value) / 1e3) % 10)) << 24) |
+                ((((uint256(value) / 1e4) % 10)) << 32)
+            ));
         }
     }
 
@@ -129,13 +137,14 @@ library NFTArt {
                 int256 l = int256(cfg.ls[q]);
 
                 uint256 i = 0;
-                for (uint256 p = cfg.ncol - 1; p != type(uint256).max; p--) {
+                for (uint256 p = cfg.ncol - 1; p != type(uint256).max; --p) {
                     bytes6 color = cfg.colors[cfg.result % 3];
                     int256 w = int256(cfg.ws[p]);
                     int256 h = int256(cfg.hs[q][p]);
                     int256 pAdjusted = cfg.offsetP + int256(p == 0 ? 0 : cfg.wsCumSum[p - 1]);
                     int256 qAdjusted = cfg.offsetQ + qMemo;
                     bool addLogo = q == cfg.nrow - 1 && p == 0;
+
                     bs[i++] = makeBlock(pAdjusted, qAdjusted, w, l, h, color, addLogo);
                     cfg.result /= 3;
                 }
@@ -181,7 +190,7 @@ library NFTArt {
         bytes6 frameColor;
     }
 
-    function computeConfig(
+    function generateConfig(
         uint256 result,
         uint256 ncol,
         uint256 nrow,
@@ -200,38 +209,44 @@ library NFTArt {
         cfg.frameColor = FRAME_COLOR;
 
         while (true) {
+            // generate widths
             unchecked {
                 uint256[8] memory ws = cfg.ws;
                 uint256[8] memory wsCumSum = cfg.wsCumSum;
                 uint256 rand = rng.rand();
                 uint256 memo = 0;
-                for (uint256 p = 0; p < ncol; p++) {
+                for (uint256 p = 0; p < ncol; ++p) {
                     uint256 w = (W_BASE + ((rand >> (8 * p)) % W_RAND)) * uint256(SCALE);
                     if (p == 0 && w < FIRST_COL_MIN_W) w = FIRST_COL_MIN_W;
                     wsCumSum[p] = (memo += (ws[p] = w));
                 }
                 cfg.offsetP = -int256(memo) / 2;
             }
+
+            // generate lengths
             unchecked {
                 uint256[8] memory ls = cfg.ls;
                 uint256 rand = rng.rand();
                 uint256 memo = 0;
-                for (uint256 q = 0; q < nrow; q++) {
+                for (uint256 q = 0; q < nrow; ++q) {
                     uint256 l = (L_BASE + ((rand >> (8 * q)) % L_RAND)) * uint256(SCALE);
                     if (q == nrow - 1 && l < LAST_ROW_MIN_L) l = LAST_ROW_MIN_L;
                     memo += (ls[q] = l);
                 }
                 cfg.offsetQ = -int256(memo) / 2;
             }
+
             // ensure no "out of canvas"
             (int256 x0, ) = isometric(cfg.offsetP, cfg.offsetQ);
             if (x0 >= 3000) break;
         }
+
+        // generate heights
         unchecked {
             uint256[8][8] memory hs = cfg.hs;
-            for (uint256 q = 0; q < nrow; q++) {
+            for (uint256 q = 0; q < nrow; ++q) {
                 uint256 rand = rng.rand();
-                for (uint256 p = 0; p < ncol; p++) {
+                for (uint256 p = 0; p < ncol; ++p) {
                     hs[q][p] = (H_BASE + ((rand >> (8 * p)) % H_RAND)) * uint256(SCALE);
                 }
             }
@@ -246,17 +261,6 @@ library NFTArt {
         uint256 nrow,
         uint256 salt
     ) internal pure returns (bytes memory svg) {
-        return makeSvg(computeConfig(result, ncol, nrow, salt));
-    }
-}
-
-library RNG {
-    struct Data {
-        uint256 seed;
-        uint256 i;
-    }
-
-    function rand(Data memory rng) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encode(rng.seed, rng.i++)));
+        return makeSvg(generateConfig(result, ncol, nrow, salt));
     }
 }

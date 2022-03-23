@@ -34,19 +34,19 @@ library NFTDescriptor {
         uint256 result,
         uint256 ncol,
         uint256 nrow
-    ) internal pure returns (string memory squares) {
+    ) internal pure returns (string memory) {
         unchecked {
             bytes[8] memory rows;
-            for (uint256 q = 0; q < nrow; q++) {
+            for (uint256 q = 0; q < nrow; ++q) {
                 string[8] memory strs;
-                for (uint256 p = ncol - 1; p != type(uint256).max; p--) {
+                for (uint256 p = ncol - 1; p != type(uint256).max; --p) {
                     uint256 res = result % 3;
                     strs[p] = res == 0 ? hex"e2ac9cefb88f" : res == 1 ? hex"f09f9fa8" : hex"f09f9fa9";
                     result /= 3;
                 }
                 rows[q] = abi.encodePacked(strs[0], strs[1], strs[2], strs[3], strs[4], strs[5], strs[6], strs[7], "\\n");
             }
-            squares = string(abi.encodePacked(rows[0], rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7]));
+            return string(abi.encodePacked(rows[0], rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7]));
         }
     }
 
